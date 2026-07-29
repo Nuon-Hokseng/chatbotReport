@@ -47,6 +47,27 @@ app.get('/wakeup', async (req, res) => {
 
 app.listen(port, () => console.log(`Dummy server listening on port ${port}`));
 
+const botUrl = process.env.BOT_BASE_URL;
+
+// Keep Database Alive (Pings Supabase every hour)
+setInterval(() => {
+    db.pool.query('SELECT 1').catch(() => console.error("Keep-alive DB ping failed"));
+}, 60 * 60 * 1000);
+
+// Keep Render Awake (8 PM to 3 AM ICT)
+setInterval(() => {
+    const hour = (new Date().getUTCHours() + 7) % 24; // Convert UTC to UTC+7 (Cambodia/ICT)
+    if (hour >= 20 || hour < 3) {
+        // Send inbound traffic to both servers to prevent 15-min sleep
+        if (botUrl) {
+            axios.get(botUrl).catch(() => {});
+            console.log("Self-pinging Bot Server to stay awake...");
+        }
+        axios.get(`${apiBaseUrl}/task`).catch(() => {});
+        console.log("Pinging API Server to stay awake...");
+    }
+}, 14 * 60 * 1000); // Run every 14 minutes
+
 console.log('====================================');
 console.log('🤖 Multi-User Telegram Bot is running!');
 console.log(`👥 Connected to DB cache.`);
