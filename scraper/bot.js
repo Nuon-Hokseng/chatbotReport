@@ -54,10 +54,10 @@ setInterval(() => {
     db.pool.query('SELECT 1').catch(() => console.error("Keep-alive DB ping failed"));
 }, 60 * 60 * 1000);
 
-// Keep Render Awake (8 PM to 3 AM ICT)
+// Keep Render Awake (6 PM to 6 AM ICT)
 setInterval(() => {
     const hour = (new Date().getUTCHours() + 7) % 24; // Convert UTC to UTC+7 (Cambodia/ICT)
-    if (hour >= 20 || hour < 3) {
+    if (hour >= 18 || hour < 6) {
         // Send inbound traffic to both servers to prevent 15-min sleep
         if (botUrl) {
             axios.get(botUrl).catch(() => {});
