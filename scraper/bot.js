@@ -29,7 +29,7 @@ const express = require('express');
 const app = express();
 const port = process.env.PORT || 4000;
 app.get('/', (req, res) => res.send('Bot is running!'));
-app.listen(port, () => console.log(`Dummy server listening on port ${port} for Render`));
+app.listen(port, () => console.log(`Dummy server listening on port ${port}`));
 
 console.log('====================================');
 console.log('🤖 Multi-User Telegram Bot is running!');
@@ -125,7 +125,7 @@ bot.on('message', async (msg) => {
         const password = text;
         
         resetUserState(chatId);
-        bot.sendMessage(chatId, '🔄 Sending login request to Render... Please wait (~15 seconds).');
+        bot.sendMessage(chatId, '🔄 Sending login request... Please wait (~15 seconds).');
         
         try {
             const res = await axios.post(`${apiBaseUrl}/register`, { email, password, userId: chatId });
@@ -181,7 +181,7 @@ bot.on('message', async (msg) => {
         } catch (err) {
             const errMsg = err.response?.data?.error || err.message;
             if (errMsg.includes('Not logged in') || errMsg.includes('401')) {
-                showMainMenu(chatId, `❌ Session expired on Render! Please login again.`);
+                showMainMenu(chatId, `❌ Session expired! Please login again.`);
             } else {
                 showMainMenu(chatId, `❌ Failed to add report: ${errMsg}`);
             }
@@ -209,7 +209,7 @@ bot.on('callback_query', async (query) => {
 
     // Handle: VIEW_TASKS button
     if (data === 'VIEW_TASKS') {
-        bot.sendMessage(chatId, '🔄 Scraping your dashboard tasks from Render...');
+        bot.sendMessage(chatId, '🔄 Scraping your dashboard tasks...');
         
         try {
             const res = await axios.get(`${apiBaseUrl}/task?userId=${chatId}`);
@@ -240,7 +240,7 @@ bot.on('callback_query', async (query) => {
         } catch (err) {
             const errMsg = err.response?.data?.error || err.message;
             if (errMsg.includes('Not logged in') || errMsg.includes('401')) {
-                showMainMenu(chatId, `❌ Session expired on Render! Please click Login first.`);
+                showMainMenu(chatId, `❌ Session expired! Please click Login first.`);
             } else {
                 showMainMenu(chatId, `❌ API Error: ${errMsg}`);
             }
