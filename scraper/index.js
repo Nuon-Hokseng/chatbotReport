@@ -5,19 +5,13 @@ const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
-
-const statesDir = path.join(__dirname, 'states');
-if (!fs.existsSync(statesDir)) {
-    fs.mkdirSync(statesDir);
-}
-const getStatePath = (userId) => path.join(statesDir, `state_${userId}.json`);
+const db = require('./db');
 
 app.use(express.json());
 
 // --- Core Browser Helpers ---
 
-async function launchBrowserContext(requireAuth, userId) {
-    const statePath = getStatePath(userId);
+async function launchBrowserContext(stateObject = null) {
     const browser = await chromium.launch({
         headless: true, // Production mode
         args: [
@@ -28,8 +22,8 @@ async function launchBrowserContext(requireAuth, userId) {
     });
 
     let contextOptions = {};
-    if (requireAuth && fs.existsSync(statePath)) {
-        contextOptions.storageState = statePath;
+    if (stateObject) {
+        contextOptions.storageState = stateObject;
     }
 
     const context = await browser.newContext(contextOptions);
@@ -43,7 +37,7 @@ async function launchBrowserContext(requireAuth, userId) {
     return { browser, context, page };
 }
 
-async function performLogin(page, context, email, password, statePath) {
+async function performLogin(page, context, email, password, userId) {
     console.log("Navigating to login...");
     await page.goto("http://185.185.80.214/login", { waitUntil: 'domcontentloaded' });
 
@@ -93,8 +87,12 @@ async function performLogin(page, context, email, password, statePath) {
     console.log("Waiting for dashboard redirect...");
     await page.waitForSelector('table tbody tr', { timeout: 15000 });
 
-    console.log("Saving new cookies...");
-    await context.storageState({ path: statePath });
+    console.log("Saving new cookies to DB...");
+    const stateObject = await context.storageState();
+    await db.pool.query(
+        'INSERT INTO sessions (user_id, state) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET state = EXCLUDED.state',
+        [userId, stateObject]
+    );
     return true;
 }
 
@@ -129,15 +127,14 @@ app.post('/api/v1/register', async (req, res) => {
     if (!email || !password || !userId) {
         return res.status(400).json({ success: false, error: "email, password, and userId are required" });
     }
-    const statePath = getStatePath(userId);
 
     let browserInstance;
     try {
         // Launch WITHOUT requiring existing auth
-        const { browser, context, page } = await launchBrowserContext(false, userId);
+        const { browser, context, page } = await launchBrowserContext();
         browserInstance = browser;
 
-        await performLogin(page, context, email, password, statePath);
+        await performLogin(page, context, email, password, userId);
 
         res.json({ success: true, message: "Successfully logged in and saved session for future use" });
     } catch (error) {
@@ -156,14 +153,15 @@ app.get('/api/v1/task', async (req, res) => {
         return res.status(400).json({ success: false, error: "userId query parameter is required" });
     }
     
-    const statePath = getStatePath(userId);
-    if (!fs.existsSync(statePath)) {
-        return res.status(401).json({ success: false, error: "Not logged in. Please call /api/v1/register first." });
-    }
-
     let browserInstance;
     try {
-        const { browser, context, page } = await launchBrowserContext(true, userId);
+        const dbRes = await db.pool.query('SELECT state FROM sessions WHERE user_id = $1', [userId]);
+        if (dbRes.rows.length === 0) {
+            return res.status(401).json({ success: false, error: "Not logged in. Please call /api/v1/register first." });
+        }
+        
+        const stateObject = dbRes.rows[0].state;
+        const { browser, context, page } = await launchBrowserContext(stateObject);
         browserInstance = browser;
 
         await page.goto("http://185.185.80.214/", { waitUntil: 'domcontentloaded' });
@@ -189,14 +187,15 @@ app.post('/api/v1/report', async (req, res) => {
         return res.status(400).json({ success: false, error: "taskId, reportDescription, reportSession, and userId are required" });
     }
     
-    const statePath = getStatePath(userId);
-    if (!fs.existsSync(statePath)) {
-        return res.status(401).json({ success: false, error: "Not logged in. Please call /api/v1/register first." });
-    }
-
     let browserInstance;
     try {
-        const { browser, context, page } = await launchBrowserContext(true, userId);
+        const dbRes = await db.pool.query('SELECT state FROM sessions WHERE user_id = $1', [userId]);
+        if (dbRes.rows.length === 0) {
+            return res.status(401).json({ success: false, error: "Not logged in. Please call /api/v1/register first." });
+        }
+        
+        const stateObject = dbRes.rows[0].state;
+        const { browser, context, page } = await launchBrowserContext(stateObject);
         browserInstance = browser;
 
         console.log(`Starting report flow for Task ID: ${taskId}`);
@@ -267,10 +266,13 @@ app.post('/api/v1/report', async (req, res) => {
 });
 
 
-app.listen(port, () => {
-    console.log(`Telegram Bot Backend API listening at http://localhost:${port}`);
-    console.log(`Endpoints available:`);
-    console.log(` - POST /api/v1/register`);
-    console.log(` - GET  /api/v1/task`);
-    console.log(` - POST /api/v1/report`);
+// Initialize DB before starting server
+db.initDB().then(() => {
+    app.listen(port, () => {
+        console.log(`Telegram Bot Backend API listening at http://localhost:${port}`);
+        console.log(`Endpoints available:`);
+        console.log(` - POST /api/v1/register`);
+        console.log(` - GET  /api/v1/task`);
+        console.log(` - POST /api/v1/report`);
+    });
 });

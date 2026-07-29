@@ -1,26 +1,24 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api').default || require('node-telegram-bot-api');
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
+const db = require('./db');
 
 const token = process.env.BOT_TOKEN;
 const apiBaseUrl = process.env.API_BASE_URL;
 
-// Load Multi-User Data
-const usersPath = path.join(__dirname, 'users.json');
-const secretsPath = path.join(__dirname, 'secrets.json');
+// Memory Cache for Authorized Users
+const authorizedUsersCache = new Set();
 
-let authorizedUsers = [];
-let secrets = [];
-
-if (fs.existsSync(usersPath)) authorizedUsers = JSON.parse(fs.readFileSync(usersPath));
-if (fs.existsSync(secretsPath)) secrets = JSON.parse(fs.readFileSync(secretsPath));
-
-const saveStorage = () => {
-    fs.writeFileSync(usersPath, JSON.stringify(authorizedUsers, null, 2));
-    fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2));
-};
+// Initialize DB and load cache
+db.initDB().then(async () => {
+    try {
+        const res = await db.pool.query('SELECT chat_id FROM authorized_users');
+        res.rows.forEach(r => authorizedUsersCache.add(r.chat_id));
+        console.log(`Loaded ${authorizedUsersCache.size} authorized users from DB.`);
+    } catch (err) {
+        console.error('Failed to load authorized users cache:', err);
+    }
+});
 
 const bot = new TelegramBot(token, { polling: true });
 
@@ -33,8 +31,7 @@ app.listen(port, () => console.log(`Dummy server listening on port ${port}`));
 
 console.log('====================================');
 console.log('🤖 Multi-User Telegram Bot is running!');
-console.log(`👥 Currently authorized users: ${authorizedUsers.length}`);
-console.log(`🔐 Available secret codes: ${secrets.length}`);
+console.log(`👥 Connected to DB cache.`);
 console.log(`🔗 Connected to API: ${apiBaseUrl}`);
 console.log('====================================');
 
@@ -75,25 +72,35 @@ bot.on('message', async (msg) => {
 
     // Handle Activation
     if (text.startsWith('/activate')) {
-        if (authorizedUsers.includes(chatId)) {
+        if (authorizedUsersCache.has(chatId)) {
             return bot.sendMessage(chatId, "✅ You are already activated!");
         }
         
         const code = text.split(' ')[1];
         if (!code) return bot.sendMessage(chatId, "⚠️ Please provide a code. Example: `/activate 1234ABCD`", { parse_mode: 'Markdown' });
 
-        if (secrets.includes(code)) {
-            secrets = secrets.filter(c => c !== code); // Burn the code
-            authorizedUsers.push(chatId); // Authorize user
-            saveStorage();
-            return showMainMenu(chatId, `🎉 **Activation Successful!**\nWelcome to ReportBot. Your device is now authorized.`);
-        } else {
-            return bot.sendMessage(chatId, "❌ Invalid or already used Secret Code.");
+        try {
+            // Check if secret exists
+            const secretRes = await db.pool.query('SELECT code FROM secrets WHERE code = $1', [code]);
+            if (secretRes.rows.length > 0) {
+                // Burn the code
+                await db.pool.query('DELETE FROM secrets WHERE code = $1', [code]);
+                // Authorize user
+                await db.pool.query('INSERT INTO authorized_users (chat_id) VALUES ($1) ON CONFLICT DO NOTHING', [chatId]);
+                
+                authorizedUsersCache.add(chatId);
+                return showMainMenu(chatId, `🎉 **Activation Successful!**\nWelcome to ReportBot. Your device is now authorized.`);
+            } else {
+                return bot.sendMessage(chatId, "❌ Invalid or already used Secret Code.");
+            }
+        } catch (err) {
+            console.error("Activation error:", err);
+            return bot.sendMessage(chatId, "❌ Database error during activation.");
         }
     }
 
     // Security Check
-    if (!authorizedUsers.includes(chatId)) {
+    if (!authorizedUsersCache.has(chatId)) {
         return bot.sendMessage(chatId, "🛑 *Unauthorized.*\n\nPlease activate this bot by typing:\n`/activate <SECRET_CODE>`", { parse_mode: 'Markdown' });
     }
 
@@ -196,7 +203,7 @@ bot.on('callback_query', async (query) => {
     const chatId = String(query.message.chat.id);
     bot.answerCallbackQuery(query.id);
     
-    if (!authorizedUsers.includes(chatId)) return;
+    if (!authorizedUsersCache.has(chatId)) return;
     
     const data = query.data;
     const state = getUserState(chatId);
