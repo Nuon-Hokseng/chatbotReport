@@ -209,10 +209,14 @@ bot.on('callback_query', async (query) => {
 
     // Handle: VIEW_TASKS button
     if (data === 'VIEW_TASKS') {
-        bot.sendMessage(chatId, '🔄 Scraping your dashboard tasks...');
+        const loadingMsg = await bot.sendMessage(chatId, '🔄 Scraping your dashboard tasks...');
         
         try {
             const res = await axios.get(`${apiBaseUrl}/task?userId=${chatId}`);
+            
+            // Delete the "Scraping..." message to keep the chat clean
+            bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
+            
             if (res.data.success) {
                 const tasks = res.data.tasks;
                 if (tasks.length === 0) {
@@ -238,6 +242,9 @@ bot.on('callback_query', async (query) => {
                 });
             }
         } catch (err) {
+            // Delete the "Scraping..." message if it failed
+            bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
+            
             const errMsg = err.response?.data?.error || err.message;
             if (errMsg.includes('Not logged in') || errMsg.includes('401')) {
                 showMainMenu(chatId, `❌ Session expired! Please click Login first.`);
