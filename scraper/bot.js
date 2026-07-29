@@ -24,6 +24,13 @@ const saveStorage = () => {
 
 const bot = new TelegramBot(token, { polling: true });
 
+// Dummy Web Server for Render Hosting (Prevents Port Timeout Crash)
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 4000;
+app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(port, () => console.log(`Dummy server listening on port ${port} for Render`));
+
 console.log('====================================');
 console.log('🤖 Multi-User Telegram Bot is running!');
 console.log(`👥 Currently authorized users: ${authorizedUsers.length}`);
