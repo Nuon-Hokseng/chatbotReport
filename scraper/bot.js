@@ -27,6 +27,24 @@ const express = require('express');
 const app = express();
 const port = process.env.PORT || 4000;
 app.get('/', (req, res) => res.send('Bot is running!'));
+
+app.get('/wakeup', async (req, res) => {
+    try {
+        await axios.get(`${apiBaseUrl}/task`).catch(() => {});
+        res.send(`
+            <h1 style="color: green; font-family: sans-serif; text-align: center; margin-top: 20%;">
+                ✅ Systems Online!
+            </h1>
+            <p style="text-align: center; font-family: sans-serif;">
+                Both the Bot Server and Scraper API have been awakened.<br/>
+                You can now return to Telegram and use the bot!
+            </p>
+        `);
+    } catch (err) {
+        res.send('Bot is awake, but could not reach the API server.');
+    }
+});
+
 app.listen(port, () => console.log(`Dummy server listening on port ${port}`));
 
 console.log('====================================');
