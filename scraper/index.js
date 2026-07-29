@@ -96,7 +96,7 @@ async function scrapeTasks(page) {
     return await page.$$eval('table tbody tr', rows => {
         return rows.map(row => {
             const cells = row.querySelectorAll('td');
-            if (cells.length >= 6) {
+            if (cells.length > 6 && cells[6]) {
                 const links = cells[6].querySelectorAll('a');
                 return {
                     id: cells[0].innerText.trim(),
