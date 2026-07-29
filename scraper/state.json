@@ -1,0 +1,33 @@
+{
+  "cookies": [
+    {
+      "name": "authentication-cookie",
+      "value": "{%22auth%22:{%22access_token%22:%22U2FsdGVkX1/hZ2clxNtlPwAZtlwXoyrU4Y9MuPeMpyLa1npwzaqSSfbbO1VoHVoZOp9oUHYsYhNAnCNqOQ/rMdCV7r0sDGMrFU7hEKPyNTlCd8vexE/IWnl3MkjotCHTt/8iFHCNJK1UlxUF+A1e3vwYap5gL7Tr5ckt9myaHcRbnpT0oPMU8bVJMbwAUaFsa29YJCFmPhfldnIvdhKYF9RlzzIyn0jhS//X5QbD7EgwVlUKMHScpfWUZH6fRpfGixujZeaGvPD4La+LcP6LDqc82FQNEYHtdlQxMmr3MXJo0PeI4dSLYK8fXekyUAs4SYT/HLypXRKuj+lGhy+ZAEgfEnx1oVq9ZQoScGuTsNmTO72HuqS7P3CXsSqp3JN8wbPlZ2EuzfsN7IVJ5nBzHf5cFIlZQF0hX7mSl2EyR6cF4yUB2DCgsERc8lIm7jMSmso/Az+VVbj63BgeEyVdUDZ522A9SJg6deYyWHNsvH48K1/97GgFhyU+8mhueqsfMwvRw70GpnwsOYTvnMuthA==%22%2C%22refresh_token%22:%22U2FsdGVkX1+k4rfupR7F4sdSrvK58QKU+4wRlobYMwlIIQOTE0kTlOKs/UJ4eaIpzMgHHVkZfqDJykO4hsOHzCsTIvDzvpeFtFer4UvR6AW5qgEhsnaqmsOPBOk26jLVM9bMbYiPoCzjgj4wwJ2TqJ8lmG6nEeh34fli7PksemK0gRwLd8kCEGJL5xvK9MQbEChNd8oJTeArJfujD8GslQuXT9WbWxtXw3OprtlWfmdrOtlHV6KhB6uXmTZ6m+gcSnKwn1juZaIVdxSgW36C3biqsK50CuAy7zzcfeYnIt+xwioTOQYDWLc0L5LXDmxUUY17VBRx8rZkIlwgGdleQCxdvbsEIt9mWMPjVRWJ6we/rNw1q8LEnvwazkTyIBeXI+Lq6vxoaZZnh1cs93sztoOT3BNckjhJiCBUYG0qjG9N8HdWpkZMJVGxGcErV/apbqKjfSM9e57KCyn4cVAv3iz26F0a4Y0YNnYQsmdzXZASgmGDPDSJgDxyCb9inpMfacRFa1ol8fKJExKD7FHTZw==%22%2C%22user%22:{%22email%22:%22nuon.hokseng24@kit.edu.kh%22%2C%22id%22:532%2C%22profile%22:%22default.jpg%22%2C%22role%22:%22USER%22%2C%22student_id%22:591%2C%22username%22:%22Nuon%20Hokseng%22}}}",
+      "domain": "185.185.80.214",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://185.185.80.214",
+      "localStorage": [
+        {
+          "name": "rememberMe",
+          "value": ""
+        },
+        {
+          "name": "_Un109",
+          "value": ""
+        },
+        {
+          "name": "pA_871",
+          "value": ""
+        }
+      ]
+    }
+  ]
+}
