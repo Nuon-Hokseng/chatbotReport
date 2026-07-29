@@ -108,6 +108,47 @@ bot.on('message', async (msg) => {
     if (text === '/start' || text === '/help') {
         return showMainMenu(chatId);
     }
+    
+    // Handle Shortcut Report Command: /report taskId; description; sessions
+    if (text.startsWith('/report ')) {
+        const argsString = text.replace('/report ', '').trim();
+        const parts = argsString.split(';');
+        
+        if (parts.length !== 3) {
+            return bot.sendMessage(chatId, "⚠️ *Invalid format!*\n\nPlease use:\n`/report <TaskID>; <Description>; <Sessions>`\n\n_Example:_\n`/report 1; fix frontend and connect it to database; 5`", { parse_mode: 'Markdown' });
+        }
+        
+        const taskId = parts[0].trim();
+        const description = parts[1].trim();
+        const sessionCount = parseInt(parts[2].trim());
+        
+        if (isNaN(sessionCount) || sessionCount <= 0) {
+            return bot.sendMessage(chatId, "⚠️ Invalid session count! It must be a number greater than 0.");
+        }
+        
+        bot.sendMessage(chatId, `⚡ *Shortcut Report Detected!*\n🔄 Submitting to Task ID ${taskId}...\n📝 Description: "${description}"\n⏳ Sessions: ${sessionCount}`, { parse_mode: 'Markdown' });
+        
+        try {
+            const res = await axios.post(`${apiBaseUrl}/report`, { 
+                taskId, 
+                reportDescription: description, 
+                reportSession: sessionCount,
+                userId: chatId
+            });
+            
+            if (res.data.success) {
+                showMainMenu(chatId, `🎉 **Success!** Shortcut report submitted to Task ${taskId}.`);
+            }
+        } catch (err) {
+            const errMsg = err.response?.data?.error || err.message;
+            if (errMsg.includes('Not logged in') || errMsg.includes('401')) {
+                showMainMenu(chatId, `❌ Session expired! Please click Login first.`);
+            } else {
+                showMainMenu(chatId, `❌ Failed to add report: ${errMsg}`);
+            }
+        }
+        return;
+    }
 
     const state = getUserState(chatId);
 
