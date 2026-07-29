@@ -1,0 +1,257 @@
+require('dotenv').config();
+const TelegramBot = require('node-telegram-bot-api').default || require('node-telegram-bot-api');
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+
+const token = process.env.BOT_TOKEN;
+const apiBaseUrl = process.env.API_BASE_URL;
+
+// Load Multi-User Data
+const usersPath = path.join(__dirname, 'users.json');
+const secretsPath = path.join(__dirname, 'secrets.json');
+
+let authorizedUsers = [];
+let secrets = [];
+
+if (fs.existsSync(usersPath)) authorizedUsers = JSON.parse(fs.readFileSync(usersPath));
+if (fs.existsSync(secretsPath)) secrets = JSON.parse(fs.readFileSync(secretsPath));
+
+const saveStorage = () => {
+    fs.writeFileSync(usersPath, JSON.stringify(authorizedUsers, null, 2));
+    fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2));
+};
+
+const bot = new TelegramBot(token, { polling: true });
+
+console.log('====================================');
+console.log('🤖 Multi-User Telegram Bot is running!');
+console.log(`👥 Currently authorized users: ${authorizedUsers.length}`);
+console.log(`🔐 Available secret codes: ${secrets.length}`);
+console.log(`🔗 Connected to API: ${apiBaseUrl}`);
+console.log('====================================');
+
+// State Machine for Conversational Flow (Multi-User)
+const userStates = {}; 
+
+const getUserState = (chatId) => {
+    if (!userStates[chatId]) {
+        userStates[chatId] = { step: 'NONE', taskId: null, sessionCount: null, username: null };
+    }
+    return userStates[chatId];
+};
+
+const resetUserState = (chatId) => {
+    userStates[chatId] = { step: 'NONE', taskId: null, sessionCount: null, username: null };
+};
+
+// Helper: Show Main Menu
+const showMainMenu = (chatId, text = "🤖 *Welcome to ReportBot!* \nWhat would you like to do?") => {
+    resetUserState(chatId);
+    
+    bot.sendMessage(chatId, text, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '📋 View Active Tasks', callback_data: 'VIEW_TASKS' }],
+                [{ text: '🔑 Login / Refresh Session', callback_data: 'LOGIN' }]
+            ]
+        }
+    });
+};
+
+
+// 1. Text Message Handler
+bot.on('message', async (msg) => {
+    const chatId = String(msg.chat.id);
+    const text = msg.text || '';
+
+    // Handle Activation
+    if (text.startsWith('/activate')) {
+        if (authorizedUsers.includes(chatId)) {
+            return bot.sendMessage(chatId, "✅ You are already activated!");
+        }
+        
+        const code = text.split(' ')[1];
+        if (!code) return bot.sendMessage(chatId, "⚠️ Please provide a code. Example: `/activate 1234ABCD`", { parse_mode: 'Markdown' });
+
+        if (secrets.includes(code)) {
+            secrets = secrets.filter(c => c !== code); // Burn the code
+            authorizedUsers.push(chatId); // Authorize user
+            saveStorage();
+            return showMainMenu(chatId, `🎉 **Activation Successful!**\nWelcome to ReportBot. Your device is now authorized.`);
+        } else {
+            return bot.sendMessage(chatId, "❌ Invalid or already used Secret Code.");
+        }
+    }
+
+    // Security Check
+    if (!authorizedUsers.includes(chatId)) {
+        return bot.sendMessage(chatId, "🛑 *Unauthorized.*\n\nPlease activate this bot by typing:\n`/activate <SECRET_CODE>`", { parse_mode: 'Markdown' });
+    }
+
+    // Handle standard commands first
+    if (text === '/start' || text === '/help') {
+        return showMainMenu(chatId);
+    }
+    
+    const state = getUserState(chatId);
+    
+    // Ignore if no state is pending
+    if (state.step === 'NONE') {
+        if (!text.startsWith('/')) {
+            showMainMenu(chatId, "I didn't understand that. Please use the menu below:");
+        }
+        return;
+    }
+
+    // Handle: AWAITING_LOGIN_USERNAME
+    if (state.step === 'AWAITING_LOGIN_USERNAME') {
+        state.username = text;
+        state.step = 'AWAITING_LOGIN_PASSWORD';
+        return bot.sendMessage(chatId, "🔑 Great. Now reply with your *Password*:", { parse_mode: 'Markdown' });
+    }
+
+    // Handle: AWAITING_LOGIN_PASSWORD
+    if (state.step === 'AWAITING_LOGIN_PASSWORD') {
+        const email = state.username;
+        const password = text;
+        
+        resetUserState(chatId);
+        bot.sendMessage(chatId, '🔄 Sending login request to Render... Please wait (~15 seconds).');
+        
+        try {
+            const res = await axios.post(`${apiBaseUrl}/register`, { email, password, userId: chatId });
+            if (res.data.success) {
+                showMainMenu(chatId, '✅ Successfully logged in! You can now view your tasks.');
+            } else {
+                showMainMenu(chatId, `❌ Login failed: ${res.data.error}`);
+            }
+        } catch (err) {
+            const errMsg = err.response?.data?.error || err.message;
+            if (errMsg.includes('Timeout')) {
+                 showMainMenu(chatId, `❌ Login Failed: Incorrect Username or Password.`);
+            } else {
+                 showMainMenu(chatId, `❌ API Error: ${errMsg}`);
+            }
+        }
+        return;
+    }
+
+    // Handle: AWAITING_SESSION_COUNT
+    if (state.step === 'AWAITING_SESSION_COUNT') {
+        const count = parseInt(text);
+        if (isNaN(count) || count <= 0) {
+            return bot.sendMessage(chatId, "⚠️ Please enter a valid number (e.g., 1, 2, 3).");
+        }
+        
+        state.sessionCount = count;
+        state.step = 'AWAITING_DESCRIPTION';
+        return bot.sendMessage(chatId, `✅ Session count set to *${count}*.\n\nNow, please type the *Description* for this report:`, { parse_mode: 'Markdown' });
+    }
+
+    // Handle: AWAITING_DESCRIPTION
+    if (state.step === 'AWAITING_DESCRIPTION') {
+        const description = text;
+        const taskId = state.taskId;
+        const sessionCount = state.sessionCount;
+        
+        resetUserState(chatId);
+        
+        bot.sendMessage(chatId, `🔄 Submitting Report to Task ID ${taskId}...\nDescription: "${description}"`);
+        
+        try {
+            const res = await axios.post(`${apiBaseUrl}/report`, { 
+                taskId, 
+                reportDescription: description, 
+                reportSession: sessionCount,
+                userId: chatId
+            });
+            
+            if (res.data.success) {
+                showMainMenu(chatId, `🎉 **Success!** Report physically submitted to Task ${taskId}.`);
+            }
+        } catch (err) {
+            const errMsg = err.response?.data?.error || err.message;
+            if (errMsg.includes('Not logged in') || errMsg.includes('401')) {
+                showMainMenu(chatId, `❌ Session expired on Render! Please login again.`);
+            } else {
+                showMainMenu(chatId, `❌ Failed to add report: ${errMsg}`);
+            }
+        }
+        return;
+    }
+});
+
+
+// 2. Button Click Handler
+bot.on('callback_query', async (query) => {
+    const chatId = String(query.message.chat.id);
+    bot.answerCallbackQuery(query.id);
+    
+    if (!authorizedUsers.includes(chatId)) return;
+    
+    const data = query.data;
+    const state = getUserState(chatId);
+
+    // Handle: LOGIN button
+    if (data === 'LOGIN') {
+        state.step = 'AWAITING_LOGIN_USERNAME';
+        return bot.sendMessage(chatId, '🔑 Please reply to this message with your *Username* (or email):\n\n_Example: Nuon Hokseng_', { parse_mode: 'Markdown' });
+    }
+
+    // Handle: VIEW_TASKS button
+    if (data === 'VIEW_TASKS') {
+        bot.sendMessage(chatId, '🔄 Scraping your dashboard tasks from Render...');
+        
+        try {
+            const res = await axios.get(`${apiBaseUrl}/task?userId=${chatId}`);
+            if (res.data.success) {
+                const tasks = res.data.tasks;
+                if (tasks.length === 0) {
+                    return showMainMenu(chatId, '⚠️ You have no active tasks!');
+                }
+                
+                for (const t of tasks) {
+                    const taskMsg = `*ID ${t.id}*: ${t.name}\n⏳ ${t.actualHour} Hours | 🗓️ Due: ${t.deadline}`;
+                    await bot.sendMessage(chatId, taskMsg, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: `📝 Add Report to Task ${t.id}`, callback_data: `ADD_REPORT_${t.id}` }]
+                            ]
+                        }
+                    });
+                }
+                
+                bot.sendMessage(chatId, "👆 Select a task above to add a report, or return to menu:", {
+                    reply_markup: {
+                        inline_keyboard: [ [{ text: '🔙 Back to Menu', callback_data: 'MAIN_MENU' }] ]
+                    }
+                });
+            }
+        } catch (err) {
+            const errMsg = err.response?.data?.error || err.message;
+            if (errMsg.includes('Not logged in') || errMsg.includes('401')) {
+                showMainMenu(chatId, `❌ Session expired on Render! Please click Login first.`);
+            } else {
+                showMainMenu(chatId, `❌ API Error: ${errMsg}`);
+            }
+        }
+        return;
+    }
+    
+    // Handle: ADD_REPORT_xxx button
+    if (data.startsWith('ADD_REPORT_')) {
+        const taskId = data.replace('ADD_REPORT_', '');
+        state.step = 'AWAITING_SESSION_COUNT';
+        state.taskId = taskId;
+        
+        return bot.sendMessage(chatId, `📝 *Starting Report for Task ${taskId}*\n\nHow many sessions did you do? (Reply with a number like 1, 2, 3)`, { parse_mode: 'Markdown' });
+    }
+    
+    // Handle: MAIN_MENU button
+    if (data === 'MAIN_MENU') {
+        return showMainMenu(chatId);
+    }
+});

@@ -5,13 +5,19 @@ const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
-const statePath = path.join(__dirname, 'state.json');
+
+const statesDir = path.join(__dirname, 'states');
+if (!fs.existsSync(statesDir)) {
+    fs.mkdirSync(statesDir);
+}
+const getStatePath = (userId) => path.join(statesDir, `state_${userId}.json`);
 
 app.use(express.json());
 
 // --- Core Browser Helpers ---
 
-async function launchBrowserContext(requireAuth = true) {
+async function launchBrowserContext(requireAuth, userId) {
+    const statePath = getStatePath(userId);
     const browser = await chromium.launch({
         headless: true, // Production mode
         args: [
@@ -37,7 +43,7 @@ async function launchBrowserContext(requireAuth = true) {
     return { browser, context, page };
 }
 
-async function performLogin(page, context, email, password) {
+async function performLogin(page, context, email, password, statePath) {
     console.log("Navigating to login...");
     await page.goto("http://185.185.80.214/login", { waitUntil: 'domcontentloaded' });
 
@@ -119,18 +125,19 @@ async function scrapeTasks(page) {
 
 // 1. REGISTER (Executes Login)
 app.post('/api/v1/register', async (req, res) => {
-    const { email, password } = req.body || {};
-    if (!email || !password) {
-        return res.status(400).json({ success: false, error: "Email and password are required" });
+    const { email, password, userId } = req.body || {};
+    if (!email || !password || !userId) {
+        return res.status(400).json({ success: false, error: "email, password, and userId are required" });
     }
+    const statePath = getStatePath(userId);
 
     let browserInstance;
     try {
         // Launch WITHOUT requiring existing auth
-        const { browser, context, page } = await launchBrowserContext(false);
+        const { browser, context, page } = await launchBrowserContext(false, userId);
         browserInstance = browser;
 
-        await performLogin(page, context, email, password);
+        await performLogin(page, context, email, password, statePath);
 
         res.json({ success: true, message: "Successfully logged in and saved session for future use" });
     } catch (error) {
@@ -144,13 +151,19 @@ app.post('/api/v1/register', async (req, res) => {
 
 // 2. LIST TASKS
 app.get('/api/v1/task', async (req, res) => {
+    const userId = req.query.userId;
+    if (!userId) {
+        return res.status(400).json({ success: false, error: "userId query parameter is required" });
+    }
+    
+    const statePath = getStatePath(userId);
     if (!fs.existsSync(statePath)) {
         return res.status(401).json({ success: false, error: "Not logged in. Please call /api/v1/register first." });
     }
 
     let browserInstance;
     try {
-        const { browser, context, page } = await launchBrowserContext(true);
+        const { browser, context, page } = await launchBrowserContext(true, userId);
         browserInstance = browser;
 
         await page.goto("http://185.185.80.214/", { waitUntil: 'domcontentloaded' });
@@ -171,18 +184,19 @@ app.get('/api/v1/task', async (req, res) => {
 
 // 3. ADD REPORT
 app.post('/api/v1/report', async (req, res) => {
-    const { taskId, reportDescription, reportSession } = req.body || {};
-    if (!taskId || !reportDescription || !reportSession) {
-        return res.status(400).json({ success: false, error: "taskId, reportDescription, and reportSession are required" });
+    const { taskId, reportDescription, reportSession, userId } = req.body || {};
+    if (!taskId || !reportDescription || !reportSession || !userId) {
+        return res.status(400).json({ success: false, error: "taskId, reportDescription, reportSession, and userId are required" });
     }
-
+    
+    const statePath = getStatePath(userId);
     if (!fs.existsSync(statePath)) {
         return res.status(401).json({ success: false, error: "Not logged in. Please call /api/v1/register first." });
     }
 
     let browserInstance;
     try {
-        const { browser, context, page } = await launchBrowserContext(true);
+        const { browser, context, page } = await launchBrowserContext(true, userId);
         browserInstance = browser;
 
         console.log(`Starting report flow for Task ID: ${taskId}`);
